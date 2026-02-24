@@ -157,8 +157,7 @@ func (backfill *Action) pickUpPendingTasks(ssn *framework.Session) []*api.TaskIn
 				continue
 			}
 
-			stmt := framework.NewStatement(ssn)
-			err := stmt.UnPipeline(task)
+			err := ssn.UnPipeline(task)
 			if err != nil {
 				klog.Errorf("Failed to unpipeline task: %s", err.Error())
 				continue

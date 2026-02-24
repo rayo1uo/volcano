@@ -158,10 +158,11 @@ func TestPickUpPendingTasks(t *testing.T) {
 		ssn := framework.OpenSession(schedulerCache, tilers, []conf.Configuration{})
 		for _, pod := range tc.pipelinedPods {
 			jobID := api.NewTaskInfo(pod).Job
-			stmt := framework.NewStatement(ssn)
 			task, found := ssn.Jobs[jobID].Tasks[api.PodKey(pod)]
 			if found {
-				stmt.Pipeline(task, "node1", false)
+				if err := ssn.Pipeline(task, "node1"); err != nil {
+					t.Fatalf("failed to pipeline task %s/%s: %v", task.Namespace, task.Name, err)
+				}
 			}
 		}
 

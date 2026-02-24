@@ -219,44 +219,7 @@ func (s *Statement) pipeline(task *api.TaskInfo) {
 }
 
 func (s *Statement) UnPipeline(task *api.TaskInfo) error {
-	job, found := s.ssn.Jobs[task.Job]
-	if found {
-		if err := job.UpdateTaskStatus(task, api.Pending); err != nil {
-			klog.Errorf("Failed to update task <%v/%v> status to %v when unpipeline in Session <%v>: %v",
-				task.Namespace, task.Name, api.Pending, s.ssn.UID, err)
-		}
-	} else {
-		klog.Errorf("Failed to find Job <%s> in Session <%s> index when unpipeline.", task.Job, s.ssn.UID)
-	}
-
-	if node, found := s.ssn.Nodes[task.NodeName]; found {
-		if err := node.RemoveTask(task); err != nil {
-			klog.Errorf("Failed to remove task <%v/%v> to node <%v> when unpipeline in Session <%v>: %v",
-				task.Namespace, task.Name, task.NodeName, s.ssn.UID, err)
-		}
-		klog.V(3).Infof("After unpipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-			task.Namespace, task.Name, node.Name, node.Idle, node.Used, node.Releasing)
-	} else {
-		klog.Errorf("Failed to find Node <%s> in Session <%s> index when unpipeline.",
-			task.NodeName, s.ssn.UID)
-	}
-
-	for _, eh := range s.ssn.eventHandlers {
-		if eh.DeallocateFunc != nil {
-			eventInfo := &Event{
-				Task: task,
-			}
-			eh.DeallocateFunc(eventInfo)
-			if eventInfo.Err != nil {
-				klog.Errorf("Failed to exec deallocate callback functions for task <%v/%v> to node <%v> when pipeline in Session <%v>: %v",
-					task.Namespace, task.Name, task.NodeName, s.ssn.UID, eventInfo.Err)
-			}
-		}
-	}
-	task.NodeName = ""
-	task.JobAllocatedHyperNode = ""
-
-	return nil
+	return s.ssn.UnPipeline(task)
 }
 
 // Allocate the task to node
