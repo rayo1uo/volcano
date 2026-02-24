@@ -175,3 +175,88 @@ func TestBackfillWithShard(t *testing.T) {
 		})
 	}
 }
+
+func TestBackfillReallocatePipelinedBestEffortTask(t *testing.T) {
+	plugins := map[string]framework.PluginBuilder{
+		gang.PluginName:       gang.New,
+		predicates.PluginName: predicates.New,
+	}
+
+	trueValue := true
+	tiers := []conf.Tier{
+		{
+			Plugins: []conf.PluginOption{
+				{
+					Name:            gang.PluginName,
+					EnabledJobReady: &trueValue,
+				},
+				{
+					Name:             predicates.PluginName,
+					EnabledPredicate: &trueValue,
+				},
+			},
+		},
+	}
+
+	test := uthelper.TestCommonStruct{
+		Name:    "backfill reallocate pipelined best-effort task",
+		Plugins: plugins,
+		PodGroups: []*schedulingv1.PodGroup{
+			util.BuildPodGroup("pg1", "c1", "c1", 1, nil, schedulingv1.PodGroupInqueue),
+		},
+		Pods: []*v1.Pod{
+			util.BuildPod("c1", "p1", "", v1.PodPending, api.BuildResourceList("0", "0"), "pg1", make(map[string]string), make(map[string]string)),
+		},
+		Nodes: []*v1.Node{
+			util.BuildNode("n1", api.BuildResourceList("10", "20Gi", []api.ScalarResource{{Name: "pods", Value: "10"}}...), make(map[string]string)),
+		},
+		Queues: []*schedulingv1.Queue{
+			util.BuildQueue("c1", 1, nil),
+		},
+		ExpectBindsNum: 1,
+		ExpectBindMap: map[string]string{
+			"c1/p1": "n1",
+		},
+	}
+
+	ssn := test.RegisterSession(tiers, nil)
+	defer test.Close()
+
+	jobID := api.JobID("c1/pg1")
+	job := ssn.Jobs[jobID]
+	if job == nil {
+		t.Fatalf("job %s not found", jobID)
+	}
+
+	var task *api.TaskInfo
+	for _, ti := range job.Tasks {
+		task = ti
+		break
+	}
+	if task == nil {
+		t.Fatalf("task in job %s not found", jobID)
+	}
+
+	if err := ssn.Pipeline(task, "n1"); err != nil {
+		t.Fatalf("failed to prepare pipelined task: %v", err)
+	}
+
+	if got := len(job.TaskStatusIndex[api.Pipelined]); got != 1 {
+		t.Fatalf("expected 1 pipelined task before backfill, got %d", got)
+	}
+
+	action := New()
+	test.Run([]framework.Action{action})
+
+	if got := len(job.TaskStatusIndex[api.Pipelined]); got != 0 {
+		t.Fatalf("expected pipelined tasks cleared after backfill, got %d", got)
+	}
+
+	if got := len(job.TaskStatusIndex[api.Binding]); got != 1 {
+		t.Fatalf("expected task moved to binding after backfill allocate, got %d", got)
+	}
+
+	if err := test.CheckAll(0); err != nil {
+		t.Fatalf("check failed: %v", err)
+	}
+}
